@@ -207,8 +207,11 @@ export type TextType =
  */
 export interface PPTTextElement extends PPTBaseElement {
   type: 'text';
+  /** @default "" */
   content: string;
+  /** @default "Microsoft YaHei" */
   defaultFontName: string;
+  /** @default "#333333" */
   defaultColor: string;
   outline?: PPTElementOutline;
   fill?: string;
@@ -326,6 +329,7 @@ export type ImageType = 'pageFigure' | 'itemFigure' | 'background';
  */
 export interface PPTImageElement extends PPTBaseElement {
   type: 'image';
+  /** @default true */
   fixedRatio: boolean;
   src: string;
   outline?: PPTElementOutline;
@@ -418,7 +422,9 @@ export interface PPTShapeElement extends PPTBaseElement {
   type: 'shape';
   viewBox: [number, number];
   path: string;
+  /** @default false */
   fixedRatio: boolean;
+  /** @default "#5b9bd5" */
   fill: string;
   gradient?: Gradient;
   pattern?: string;
@@ -464,8 +470,11 @@ export interface PPTLineElement extends Omit<PPTBaseElement, 'height' | 'rotate'
   type: 'line';
   start: [number, number];
   end: [number, number];
+  /** @default "solid" */
   style: LineStyleType;
+  /** @default "#333333" */
   color: string;
+  /** @default ["", ""] */
   points: [LinePoint, LinePoint];
   shadow?: PPTElementShadow;
   broken?: [number, number];

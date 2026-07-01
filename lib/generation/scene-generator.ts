@@ -42,6 +42,7 @@ import {
   formatImagePlaceholder,
 } from './prompt-formatters';
 import type { PPTElement, Slide, SlideBackground, SlideTheme } from '@openmaic/dsl';
+import { normalizeElement } from '@openmaic/dsl';
 import type { QuizQuestion } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
 import type {
@@ -529,8 +530,17 @@ function normalizeGeneratedVideoRefs(
 }
 
 /**
- * Fix elements with missing required fields
- * Adds default values for fields that AI might not have generated correctly
+ * Fill required element fields the model may have left off, plus image
+ * aspect-ratio reconciliation.
+ *
+ * The default-filling / geometry-derivation / malformed-input coercion is now
+ * owned by the DSL contract — `normalizeElement` from `@openmaic/dsl` — rather
+ * than duplicated imperatively here (it fills the same canonical defaults,
+ * derives a line's `start`/`end` and a shape's `viewBox`/`path` from the box,
+ * and fails loud on a present-but-wrong-typed field instead of silently
+ * resetting it). Image aspect-ratio reconciliation stays here: it depends on the
+ * resolved PDF asset's real dimensions, which is producer-specific data the DSL
+ * deliberately does not own.
  */
 function fixElementDefaults(
   elements: GeneratedSlideData['elements'],
@@ -542,112 +552,46 @@ function fixElementDefaults(
   const imageMetaById = new Map((assignedImages ?? []).map((img) => [img.id, img]));
 
   return elements.map((el) => {
-    // Fix line elements
-    if (el.type === 'line') {
-      const lineEl = el as Record<string, unknown>;
-
-      // Ensure points field exists with default values
-      if (!lineEl.points || !Array.isArray(lineEl.points) || lineEl.points.length !== 2) {
-        log.warn(`Line element missing points, adding defaults`);
-        lineEl.points = ['', ''] as [string, string]; // Default: no markers on either end
-      }
-
-      // Ensure start/end exist
-      if (!lineEl.start || !Array.isArray(lineEl.start)) {
-        lineEl.start = [el.left ?? 0, el.top ?? 0];
-      }
-      if (!lineEl.end || !Array.isArray(lineEl.end)) {
-        lineEl.end = [(el.left ?? 0) + (el.width ?? 100), (el.top ?? 0) + (el.height ?? 0)];
-      }
-
-      // Ensure style exists
-      if (!lineEl.style) {
-        lineEl.style = 'solid';
-      }
-
-      // Ensure color exists
-      if (!lineEl.color) {
-        lineEl.color = '#333333';
-      }
-
-      return lineEl as typeof el;
+    // `normalizeElement` fails loud on malformed input (an unknown element type,
+    // a present-but-wrong-typed required field, a legacy string `viewBox`). This
+    // pass runs on unreliable model output — and on legacy slides the OLD pass
+    // itself produced — so degrade gracefully rather than letting one bad element
+    // abort the whole scene / course: keep the raw element (the old imperative
+    // pass was best-effort and never threw). Direct callers of `normalizeElement`
+    // still get the strict, fail-loud contract.
+    let normalized: PPTElement;
+    try {
+      normalized = normalizeElement(el);
+    } catch (err) {
+      log.warn(
+        `Element normalization failed, keeping raw element: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return el;
     }
 
-    // Fix text elements
-    if (el.type === 'text') {
-      const textEl = el as Record<string, unknown>;
-
-      if (!textEl.defaultFontName) {
-        textEl.defaultFontName = 'Microsoft YaHei';
-      }
-      if (!textEl.defaultColor) {
-        textEl.defaultColor = '#333333';
-      }
-      if (!textEl.content) {
-        textEl.content = '';
-      }
-
-      return textEl as typeof el;
-    }
-
-    // Fix image elements
-    if (el.type === 'image') {
-      const imageEl = el as Record<string, unknown>;
-
-      if (imageEl.fixedRatio === undefined) {
-        imageEl.fixedRatio = true;
-      }
-
-      // Correct dimensions using known aspect ratio (src is still img_id at this point)
-      if (assignedImages && typeof imageEl.src === 'string') {
-        const imgMeta = imageMetaById.get(imageEl.src);
-        if (imgMeta?.width && imgMeta?.height) {
-          const knownRatio = imgMeta.width / imgMeta.height;
-          const curW = (el.width || 400) as number;
-          const curH = (el.height || 300) as number;
-          if (Math.abs(curW / curH - knownRatio) / knownRatio > 0.1) {
-            // Keep width, correct height
-            const newH = Math.round(curW / knownRatio);
-            if (newH > 462) {
-              // canvas 562.5 - margins 50×2
-              const newW = Math.round(462 * knownRatio);
-              imageEl.width = newW;
-              imageEl.height = 462;
-            } else {
-              imageEl.height = newH;
-            }
+    // Fit the image box to the assigned PDF image's real aspect ratio (`src` is
+    // still the img_id at this point). Producer-specific, so it lives here, not
+    // in the DSL's normalize.
+    if (normalized.type === 'image' && assignedImages && typeof normalized.src === 'string') {
+      const imgMeta = imageMetaById.get(normalized.src);
+      if (imgMeta?.width && imgMeta?.height) {
+        const knownRatio = imgMeta.width / imgMeta.height;
+        const curW = normalized.width || 400;
+        const curH = normalized.height || 300;
+        if (Math.abs(curW / curH - knownRatio) / knownRatio > 0.1) {
+          // Keep width, correct height
+          const newH = Math.round(curW / knownRatio);
+          if (newH > 462) {
+            // canvas 562.5 - margins 50×2
+            return { ...normalized, width: Math.round(462 * knownRatio), height: 462 };
           }
+          return { ...normalized, height: newH };
         }
       }
-
-      return imageEl as typeof el;
     }
 
-    // Fix shape elements
-    if (el.type === 'shape') {
-      const shapeEl = el as Record<string, unknown>;
-
-      if (!shapeEl.viewBox) {
-        shapeEl.viewBox = `0 0 ${el.width ?? 100} ${el.height ?? 100}`;
-      }
-      if (!shapeEl.path) {
-        // Default to rectangle
-        const w = el.width ?? 100;
-        const h = el.height ?? 100;
-        shapeEl.path = `M0 0 L${w} 0 L${w} ${h} L0 ${h} Z`;
-      }
-      if (!shapeEl.fill) {
-        shapeEl.fill = '#5b9bd5';
-      }
-      if (shapeEl.fixedRatio === undefined) {
-        shapeEl.fixedRatio = false;
-      }
-
-      return shapeEl as typeof el;
-    }
-
-    return el;
-  });
+    return normalized;
+  }) as unknown as GeneratedSlideData['elements'];
 }
 
 /**
