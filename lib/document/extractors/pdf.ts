@@ -2,11 +2,7 @@ import { parseWithMinerUCloud } from '@/lib/pdf/mineru-cloud';
 import { parsePDF, parseWithMinerUDocument } from '@/lib/pdf/pdf-providers';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderConfig, PDFProviderId } from '@/lib/pdf/types';
-import {
-  DOCUMENT_MIME_TYPES,
-  MINERU_CLOUD_MIMES,
-  MINERU_SELFHOST_MIMES,
-} from '../mime';
+import { DOCUMENT_MIME_TYPES, MINERU_CLOUD_MIMES, MINERU_SELFHOST_MIMES } from '../mime';
 import { parsedPdfToDocumentArtifact } from '../pdf-compat';
 import type {
   DocumentExtractorCapabilities,

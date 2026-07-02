@@ -36,10 +36,7 @@ import {
 } from '@/lib/ai/thinking-config';
 import type { SettingsSection } from '@/lib/types/settings';
 import { MediaPopover } from '@/components/generation/media-popover';
-import {
-  getAcceptStringForProviders,
-  isMimeSupportedByProviders,
-} from '@/lib/document/mime';
+import { getAcceptStringForProviders, isMimeSupportedByProviders } from '@/lib/document/mime';
 
 // ─── Constants ───────────────────────────────────────────────
 const MAX_COURSE_MATERIAL_SIZE_MB = 50;
@@ -145,10 +142,10 @@ export function GenerationToolbar({
 
   const handleFileSelect = (file: File) => {
     if (
-      !isMimeSupportedByProviders(
-        { mimeType: file.type, fileName: file.name },
-        [pdfProviderId, 'plain-text'],
-      )
+      !isMimeSupportedByProviders({ mimeType: file.type, fileName: file.name }, [
+        pdfProviderId,
+        'plain-text',
+      ])
     ) {
       onPdfError(t('upload.unsupportedCourseMaterial'));
       return;

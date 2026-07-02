@@ -57,8 +57,20 @@ const DOCUMENT_FORMATS: readonly DocumentFormat[] = [
   },
   { id: 'webp', mime: 'image/webp', extensions: ['.webp'], label: 'WebP' },
   { id: 'gif', mime: 'image/gif', extensions: ['.gif'], label: 'GIF' },
-  { id: 'bmp', mime: 'image/bmp', extensions: ['.bmp'], aliasMimes: ['image/x-ms-bmp'], label: 'BMP' },
-  { id: 'jp2', mime: 'image/jp2', extensions: ['.jp2'], aliasMimes: ['image/jpeg2000'], label: 'JP2' },
+  {
+    id: 'bmp',
+    mime: 'image/bmp',
+    extensions: ['.bmp'],
+    aliasMimes: ['image/x-ms-bmp'],
+    label: 'BMP',
+  },
+  {
+    id: 'jp2',
+    mime: 'image/jp2',
+    extensions: ['.jp2'],
+    aliasMimes: ['image/jpeg2000'],
+    label: 'JP2',
+  },
 ] as const;
 
 export const DOCUMENT_MIME_TYPES: Record<(typeof DOCUMENT_FORMATS)[number]['id'], string> =
@@ -85,9 +97,7 @@ for (const f of DOCUMENT_FORMATS) {
 
 /** Every MIME string that maps back to a known format (canonical + aliases). */
 const KNOWN_MIME_TYPES: readonly string[] = Array.from(
-  new Set(
-    DOCUMENT_FORMATS.flatMap((f) => [f.mime, ...(f.aliasMimes ?? [])]),
-  ),
+  new Set(DOCUMENT_FORMATS.flatMap((f) => [f.mime, ...(f.aliasMimes ?? [])])),
 );
 
 // ─── Provider capability matrix ──────────────────────────────────────────────
@@ -99,14 +109,7 @@ const KNOWN_MIME_TYPES: readonly string[] = Array.from(
 const M = DOCUMENT_MIME_TYPES;
 
 /** MinerU image formats — supported by both self-host (v3.1+) and cloud. */
-export const MINERU_IMAGE_MIMES: readonly string[] = [
-  M.png,
-  M.jpeg,
-  M.webp,
-  M.gif,
-  M.bmp,
-  M.jp2,
-];
+export const MINERU_IMAGE_MIMES: readonly string[] = [M.png, M.jpeg, M.webp, M.gif, M.bmp, M.jp2];
 
 /** MinerU self-host: modern Office + images. Legacy OLE is cloud-only. */
 export const MINERU_SELFHOST_MIMES: readonly string[] = [
