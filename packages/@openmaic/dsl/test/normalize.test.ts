@@ -106,10 +106,13 @@ describe('normalizeElement — derived geometry', () => {
   });
 
   it('does not double-offset a line by its slide position (regression: absolute vs local)', () => {
-    const line = normalizeElement({ id: 'e', type: 'line', left: 500, top: 300, width: 80 }) as Extract<
-      PPTElement,
-      { type: 'line' }
-    >;
+    const line = normalizeElement({
+      id: 'e',
+      type: 'line',
+      left: 500,
+      top: 300,
+      width: 80,
+    }) as Extract<PPTElement, { type: 'line' }>;
     // The container is positioned at (left, top); start/end must stay local.
     expect(line.start).toEqual([0, 0]);
     expect(line.end).toEqual([80, 0]);
