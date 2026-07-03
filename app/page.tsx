@@ -23,6 +23,7 @@ import {
   Atom,
   X,
   Presentation,
+  Lightbulb,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -60,6 +61,7 @@ import { SpeechButton } from '@/components/audio/speech-button';
 import { useImportClassroom } from '@/lib/import/use-import-classroom';
 import { shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
+import { TopicRecommenderDialog } from '@/components/topic-recommender';
 
 const log = createLogger('Home');
 
@@ -169,6 +171,7 @@ function HomePage() {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const thumbnailsRef = useRef<Record<string, Slide>>({});
+  const [topicRecommenderOpen, setTopicRecommenderOpen] = useState(false);
 
   const replaceThumbnails = (slides: Record<string, Slide>) => {
     const previous = thumbnailsRef.current;
@@ -602,6 +605,27 @@ function HomePage() {
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs">
                   {t('toolbar.interactiveModeHint')}
+                </TooltipContent>
+              </Tooltip>
+
+              {/* Recommend topics */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+                    onClick={() => setTopicRecommenderOpen(true)}
+                    className={cn(
+                      'relative inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border shrink-0 h-8',
+                      'border-amber-300/60 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20',
+                    )}
+                  >
+                    <Lightbulb className="size-3.5" />
+                    <span className="hidden sm:inline relative z-10">推荐主题</span>
+                  </motion.button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  基于学习历史推荐新主题
                 </TooltipContent>
               </Tooltip>
 
@@ -1431,6 +1455,16 @@ function ClassroomCard({
           </Tooltip>
         )}
       </div>
+      {/* ═══ Topic Recommender Dialog ═══ */}
+      <TopicRecommenderDialog
+        open={topicRecommenderOpen}
+        onOpenChange={setTopicRecommenderOpen}
+        classrooms={classrooms}
+        onSelectTopic={(topic) => {
+          setForm((prev) => ({ ...prev, requirement: topic }));
+          textareaRef.current?.focus();
+        }}
+      />
     </div>
   );
 }
