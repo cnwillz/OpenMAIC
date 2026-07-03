@@ -78,6 +78,12 @@ export const ELEMENT_DEFAULTS = {
     fill: '#5b9bd5',
     fixedRatio: false,
   },
+  shapeText: {
+    content: '',
+    defaultFontName: 'Microsoft YaHei',
+    defaultColor: '#333333',
+    align: 'middle',
+  },
   line: {
     style: 'solid',
     color: '#333333',
@@ -103,10 +109,10 @@ function isLinePoints(v: unknown): v is [LinePoint, LinePoint] {
   return Array.isArray(v) && v.length === 2 && markers.includes(v[0]) && markers.includes(v[1]);
 }
 
-function fail(el: Raw, field: string, expected: string): never {
+function fail(el: Raw, field: string, expected: string, value: unknown = el[field]): never {
   throw new Error(
     `@openmaic/dsl: cannot normalize ${String(el.type)} element ${JSON.stringify(el.id)}: ` +
-      `\`${field}\` must be ${expected}, got ${JSON.stringify(el[field])}`,
+      `\`${field}\` must be ${expected}, got ${JSON.stringify(value)}`,
   );
 }
 
@@ -185,7 +191,38 @@ function normalizeShape(el: Raw): PPTShapeElement {
     path: strOrDerive(el, 'path', () => rectPath(geom(el, 'width'), geom(el, 'height'))),
     fill: str(el, 'fill', ELEMENT_DEFAULTS.shape.fill),
     fixedRatio: bool(el, 'fixedRatio', ELEMENT_DEFAULTS.shape.fixedRatio),
+    ...(el.text !== undefined ? { text: normalizeShapeText(el) } : {}),
   } as PPTShapeElement;
+}
+
+const SHAPE_TEXT_ALIGNS: readonly string[] = ['top', 'middle', 'bottom'];
+
+/**
+ * Normalize a shape's nested {@link ShapeText} overlay: its required fields are
+ * part of the contract too (consumers read `text.content` unguarded, e.g. the
+ * PPTX exporter), so a present `text` gets the same repair semantics as the
+ * element's own fields. An absent `text` stays absent — the overlay itself is
+ * optional; only its *shape* is required once present.
+ */
+function normalizeShapeText(el: Raw): PPTShapeElement['text'] {
+  const t = el.text;
+  if (!isObject(t)) fail(el, 'text', 'an object (ShapeText)');
+  const textStr = (field: string, def: string): string => {
+    const v = t[field];
+    if (v === undefined || v === '') return def;
+    if (typeof v !== 'string') fail(el, `text.${field}`, 'a string', v);
+    return v;
+  };
+  const align = t.align;
+  if (align !== undefined && !SHAPE_TEXT_ALIGNS.includes(align as string))
+    fail(el, 'text.align', "one of 'top' | 'middle' | 'bottom'", align);
+  return {
+    ...t,
+    content: textStr('content', ELEMENT_DEFAULTS.shapeText.content),
+    defaultFontName: textStr('defaultFontName', ELEMENT_DEFAULTS.shapeText.defaultFontName),
+    defaultColor: textStr('defaultColor', ELEMENT_DEFAULTS.shapeText.defaultColor),
+    align: align === undefined ? ELEMENT_DEFAULTS.shapeText.align : align,
+  } as PPTShapeElement['text'];
 }
 
 function normalizeLine(el: Raw): PPTLineElement {

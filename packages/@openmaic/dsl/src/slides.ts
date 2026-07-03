@@ -371,9 +371,13 @@ export type ShapeTextAlign = 'top' | 'middle' | 'bottom';
  * type: 文本类型
  */
 export interface ShapeText {
+  /** @default "" */
   content: string;
+  /** @default "Microsoft YaHei" */
   defaultFontName: string;
+  /** @default "#333333" */
   defaultColor: string;
+  /** @default "middle" */
   align: ShapeTextAlign;
   lineHeight?: number;
   wordSpace?: number;

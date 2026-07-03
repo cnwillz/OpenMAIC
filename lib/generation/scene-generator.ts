@@ -551,47 +551,71 @@ function fixElementDefaults(
   // pass O(elements × images)).
   const imageMetaById = new Map((assignedImages ?? []).map((img) => [img.id, img]));
 
-  return elements.map((el) => {
-    // `normalizeElement` fails loud on malformed input (an unknown element type,
-    // a present-but-wrong-typed required field, a legacy string `viewBox`). This
-    // pass runs on unreliable model output — and on legacy slides the OLD pass
-    // itself produced — so degrade gracefully rather than letting one bad element
-    // abort the whole scene / course: keep the raw element (the old imperative
-    // pass was best-effort and never threw). Direct callers of `normalizeElement`
-    // still get the strict, fail-loud contract.
-    let normalized: PPTElement;
-    try {
-      normalized = normalizeElement(el);
-    } catch (err) {
-      log.warn(
-        `Element normalization failed, keeping raw element: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return el;
-    }
+  return elements
+    .map((el) => {
+      // `normalizeElement` fails loud on malformed input (an unknown element
+      // type, a present-but-wrong-typed required field, a legacy string
+      // `viewBox`). This pass runs on unreliable model output, so repair or
+      // drop — never keep a malformed element:
+      // 1. Repair: a JSON `null` from the model means "absent" — strip nulls so
+      //    normalize treats the field as missing and fills/derives it, instead
+      //    of failing on a wrong-typed null (`start: null`, `text: null`, …).
+      // 2. Drop: if normalization still throws, discard the element. Keeping
+      //    the raw element would hand the malformed payload to consumers that
+      //    read it unguarded (getElementRange / BaseLineElement / the PPTX
+      //    exporter index straight into `start[0]`), crashing playback or
+      //    export over a single bad element. Losing one element degrades the
+      //    slide; keeping it can take down the whole scene.
+      let normalized: PPTElement;
+      try {
+        normalized = normalizeElement(stripNulls(el));
+      } catch (err) {
+        log.warn(
+          `Dropping malformed generated element: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return null;
+      }
 
-    // Fit the image box to the assigned PDF image's real aspect ratio (`src` is
-    // still the img_id at this point). Producer-specific, so it lives here, not
-    // in the DSL's normalize.
-    if (normalized.type === 'image' && assignedImages && typeof normalized.src === 'string') {
-      const imgMeta = imageMetaById.get(normalized.src);
-      if (imgMeta?.width && imgMeta?.height) {
-        const knownRatio = imgMeta.width / imgMeta.height;
-        const curW = normalized.width || 400;
-        const curH = normalized.height || 300;
-        if (Math.abs(curW / curH - knownRatio) / knownRatio > 0.1) {
-          // Keep width, correct height
-          const newH = Math.round(curW / knownRatio);
-          if (newH > 462) {
-            // canvas 562.5 - margins 50×2
-            return { ...normalized, width: Math.round(462 * knownRatio), height: 462 };
+      // Fit the image box to the assigned PDF image's real aspect ratio (`src` is
+      // still the img_id at this point). Producer-specific, so it lives here, not
+      // in the DSL's normalize.
+      if (normalized.type === 'image' && assignedImages && typeof normalized.src === 'string') {
+        const imgMeta = imageMetaById.get(normalized.src);
+        if (imgMeta?.width && imgMeta?.height) {
+          const knownRatio = imgMeta.width / imgMeta.height;
+          const curW = normalized.width || 400;
+          const curH = normalized.height || 300;
+          if (Math.abs(curW / curH - knownRatio) / knownRatio > 0.1) {
+            // Keep width, correct height
+            const newH = Math.round(curW / knownRatio);
+            if (newH > 462) {
+              // canvas 562.5 - margins 50×2
+              return { ...normalized, width: Math.round(462 * knownRatio), height: 462 };
+            }
+            return { ...normalized, height: newH };
           }
-          return { ...normalized, height: newH };
         }
       }
-    }
 
-    return normalized;
-  }) as unknown as GeneratedSlideData['elements'];
+      return normalized;
+    })
+    .filter((el) => el !== null) as unknown as GeneratedSlideData['elements'];
+}
+
+/**
+ * Drop `null`-valued properties (recursively, through plain objects) so the DSL
+ * normalizer sees them as absent and fills/derives defaults. Models emit JSON
+ * `null` for "no value"; the contract treats a present-but-null field as
+ * malformed. Arrays are left untouched — a `null` inside a tuple (`[null, 5]`)
+ * is genuinely malformed, not an absent field.
+ */
+function stripNulls(el: unknown): unknown {
+  if (Array.isArray(el) || typeof el !== 'object' || el === null) return el;
+  return Object.fromEntries(
+    Object.entries(el)
+      .filter(([, v]) => v !== null)
+      .map(([k, v]) => [k, stripNulls(v)]),
+  );
 }
 
 /**

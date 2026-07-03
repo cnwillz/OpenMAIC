@@ -73,6 +73,44 @@ describe('normalizeElement — static defaults', () => {
     >;
     expect(out.fixedRatio).toBe(false);
   });
+
+  it('fills a present-but-empty shape text overlay (consumers read text.content unguarded)', () => {
+    const out = normalizeElement({ ...box, type: 'shape', text: {} }) as Extract<
+      PPTElement,
+      { type: 'shape' }
+    >;
+    expect(out.text).toEqual(ELEMENT_DEFAULTS.shapeText);
+  });
+
+  it('keeps explicit shape text values and leaves an absent overlay absent', () => {
+    const filled = normalizeElement({
+      ...box,
+      type: 'shape',
+      text: { content: '<p>hi</p>', defaultFontName: 'Inter', defaultColor: '#111', align: 'top' },
+    }) as Extract<PPTElement, { type: 'shape' }>;
+    expect(filled.text).toMatchObject({
+      content: '<p>hi</p>',
+      defaultFontName: 'Inter',
+      defaultColor: '#111',
+      align: 'top',
+    });
+
+    const absent = normalizeElement({ ...box, type: 'shape' }) as Extract<
+      PPTElement,
+      { type: 'shape' }
+    >;
+    expect(absent.text).toBeUndefined();
+  });
+
+  it('throws on a malformed shape text overlay', () => {
+    expect(() => normalizeElement({ ...box, type: 'shape', text: 'hello' })).toThrow(/text/);
+    expect(() => normalizeElement({ ...box, type: 'shape', text: { content: 42 } })).toThrow(
+      /text\.content/,
+    );
+    expect(() => normalizeElement({ ...box, type: 'shape', text: { align: 'center' } })).toThrow(
+      /text\.align/,
+    );
+  });
 });
 
 describe('normalizeElement — derived geometry', () => {
@@ -304,4 +342,6 @@ describe('ELEMENT_DEFAULTS stays in lockstep with the schema `default` annotatio
   it('image', () => expect(defaultsOf('PPTImageElement')).toEqual(ELEMENT_DEFAULTS.image));
   it('shape', () => expect(defaultsOf('PPTShapeElement')).toEqual(ELEMENT_DEFAULTS.shape));
   it('line', () => expect(defaultsOf('PPTLineElement')).toEqual(ELEMENT_DEFAULTS.line));
+  it('shape text overlay', () =>
+    expect(defaultsOf('ShapeText')).toEqual(ELEMENT_DEFAULTS.shapeText));
 });
