@@ -19,6 +19,11 @@ interface TopicRecommenderDialogProps {
   onOpenChange: (open: boolean) => void;
   classrooms: StageListItem[];
   onSelectTopic: (topic: string) => void;
+  /** Optional model config — without it the API falls back to classroom names */
+  model?: string;
+  apiKey?: string;
+  baseUrl?: string;
+  providerType?: string;
 }
 
 export function TopicRecommenderDialog({
@@ -26,6 +31,10 @@ export function TopicRecommenderDialog({
   onOpenChange,
   classrooms,
   onSelectTopic,
+  model: modelProp,
+  apiKey: apiKeyProp,
+  baseUrl: baseUrlProp,
+  providerType: providerTypeProp,
 }: TopicRecommenderDialogProps) {
   const { t } = useI18n();
   const [topics, setTopics] = useState<string[]>([]);
@@ -45,6 +54,10 @@ export function TopicRecommenderDialog({
             name: c.name,
             description: c.description,
           })),
+          model: modelProp,
+          apiKey: apiKeyProp,
+          baseUrl: baseUrlProp,
+          providerType: providerTypeProp,
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
