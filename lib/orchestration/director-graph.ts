@@ -38,7 +38,7 @@ import { convertMessagesToOpenAI } from './summarizers/message-converter';
 import { buildDirectorPrompt, parseDirectorDecision } from './director-prompt';
 import { getEffectiveActions } from './tool-schemas';
 import type { AgentTurnSummary, WhiteboardActionRecord } from './types';
-import { parseStructuredChunk, createParserState, finalizeParser } from './stateless-generate';
+import { parseStructuredChunk, createParserState, finalizeParser, type ParseResult } from './stateless-generate';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('DirectorGraph');
@@ -445,16 +445,69 @@ async function runAgentGeneration(
       );
       try {
         const result = await adapter._generate(lcMessages);
-        const text = result.generations[0]?.text || '';
-        if (text.trim()) {
-          fullText = text;
-          write({
-            type: 'text_delta',
-            data: { content: text, messageId },
-          });
-          log.info(
-            `[AgentGenerate] Non-streaming fallback produced text(len=${text.length}) for "${agentConfig.name}"`,
-          );
+        const rawText = result.generations[0]?.text || '';
+        if (rawText.trim()) {
+          // Parse the non-streaming output through the JSON parser to extract text/actions,
+          // just like the streaming path does. The model outputs JSON arrays per system prompt.
+          const fallbackParser = createParserState();
+          parseStructuredChunk(rawText, fallbackParser);
+          const finalResult = finalizeParser(fallbackParser);
+          let emittedText = '';
+          for (const entry of finalResult.ordered) {
+            if (entry.type === 'text') {
+              const chunk = finalResult.textChunks[entry.index];
+              if (!chunk) continue;
+              emittedText += chunk;
+              write({
+                type: 'text_delta',
+                data: { content: chunk, messageId },
+              });
+            } else if (entry.type === 'action') {
+              const ac = finalResult.actions[entry.index];
+              if (!ac) continue;
+              if (!effectiveActions.includes(ac.actionName)) {
+                log.warn(
+                  `[AgentGenerate] Fallback: Agent ${agentConfig.name} attempted disallowed action: ${ac.actionName}, skipping`,
+                );
+                continue;
+              }
+              actionCount++;
+              if (ac.actionName.startsWith('wb_')) {
+                whiteboardActions.push({
+                  actionName: ac.actionName as WhiteboardActionRecord['actionName'],
+                  agentId,
+                  agentName: agentConfig.name,
+                  params: ac.params,
+                });
+              }
+              write({
+                type: 'action',
+                data: {
+                  actionId: ac.actionId,
+                  actionName: ac.actionName,
+                  params: ac.params,
+                  agentId,
+                  messageId,
+                },
+              });
+            }
+          }
+          // If the JSON parser produced nothing, emit the raw text as fallback
+          if (!emittedText && finalResult.actions.length === 0) {
+            fullText = rawText;
+            write({
+              type: 'text_delta',
+              data: { content: rawText, messageId },
+            });
+            log.warn(
+              `[AgentGenerate] Non-streaming fallback output is not valid JSON, emitted raw text(len=${rawText.length}) for "${agentConfig.name}"`,
+            );
+          } else {
+            fullText = emittedText;
+            log.info(
+              `[AgentGenerate] Non-streaming fallback parsed: text(len=${emittedText.length}), actions=${finalResult.actions.length} for "${agentConfig.name}"`,
+            );
+          }
         }
       } catch (fallbackError) {
         log.error(
