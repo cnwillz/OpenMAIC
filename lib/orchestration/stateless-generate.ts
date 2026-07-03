@@ -158,16 +158,16 @@ export function parseStructuredChunk(chunk: string, state: ParserState): ParseRe
     state.jsonStarted = true;
   }
 
-  // Step 2: Check if the array is complete (closing `]` found)
-  const trimmed = state.buffer.trimEnd();
-  const isArrayClosed = trimmed.endsWith(']') && trimmed.length > 1;
-
-  // Step 3: Try incremental parse — jsonrepair first (fixes unescaped quotes), fallback to partial-json
+  // Step 2: Try incremental parse — jsonrepair first (fixes unescaped quotes), fallback to partial-json
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- partial-json returns any[]
   let parsed: any[];
+  let isArrayClosed = false;
   try {
     const repaired = jsonrepair(state.buffer);
     parsed = JSON.parse(repaired);
+    // Full JSON.parse succeeded — array is definitely complete, regardless of
+    // trailing non-whitespace content (markdown code fences, etc.).
+    isArrayClosed = true;
   } catch {
     try {
       parsed = parsePartialJson(
@@ -177,6 +177,11 @@ export function parseStructuredChunk(chunk: string, state: ParserState): ParseRe
     } catch {
       return result;
     }
+    // Fallback heuristic: check if the raw buffer ends with ']' (trimmed).
+    // Only used for partial-json path; the full JSON.parse path above is
+    // authoritative and doesn't need this check.
+    const trimmed = state.buffer.trimEnd();
+    isArrayClosed = trimmed.endsWith(']') && trimmed.length > 1;
   }
 
   if (!Array.isArray(parsed)) {

@@ -1199,16 +1199,12 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 }}
                 onStopDiscussion={handleStopDiscussion}
                 onInputActivate={() => {
-                  // Level-1 pause: freeze buffer tick + TTS audio while SSE keeps buffering.
-                  // User resumes manually via Space / pause button after closing the input.
-                  // No isDiscussionPaused guard — always attempt to pause the buffer.
-                  // The return value ensures UI state stays in sync with buffer state.
+                  // Pause TTS only — do NOT pause the buffer.
+                  // Pausing the buffer's tick loop blocks waitUntilDrained(),
+                  // which deadlocks the agent loop and freezes the discussion permanently.
+                  // The buffer keeps processing in background; drain resolves, loop continues.
                   if (chatSessionType === 'qa' || chatSessionType === 'discussion') {
-                    const paused = chatAreaRef.current?.pauseActiveLiveBuffer();
-                    if (paused) {
-                      discussionTTS.pause();
-                      setIsDiscussionPaused(true);
-                    }
+                    discussionTTS.pause();
                   }
                   // Also pause playback engine
                   if (engineRef.current && (engineMode === 'playing' || engineMode === 'live')) {

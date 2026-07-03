@@ -131,6 +131,10 @@ export class AISdkLangGraphAdapter extends BaseChatModel {
   ): AsyncGenerator<StreamChunk> {
     const aiMessages = this.convertMessages(messages);
 
+    log.info(
+      `[streamGenerate] Starting stream: system_len=${(messages[0]?.content as string)?.length ?? 0}, messages=${messages.length}, thinking=${JSON.stringify(this.thinking)}`,
+    );
+
     const result = streamLLM(
       {
         model: this.languageModel,
@@ -142,13 +146,19 @@ export class AISdkLangGraphAdapter extends BaseChatModel {
     );
 
     let fullContent = '';
+    let chunkCount = 0;
 
     for await (const chunk of result.textStream) {
+      chunkCount++;
       if (chunk) {
         fullContent += chunk;
         yield { type: 'delta', content: chunk };
       }
     }
+
+    log.info(
+      `[streamGenerate] Stream finished: chunkCount=${chunkCount}, fullContent_len=${fullContent.length}, preview=${JSON.stringify(fullContent.slice(0, 100))}`,
+    );
 
     // Yield done with full content
     yield { type: 'done', content: fullContent };

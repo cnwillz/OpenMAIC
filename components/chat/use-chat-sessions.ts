@@ -1046,11 +1046,14 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         return;
       }
 
-      // Create a new session when there's no active QA session to append to.
-      // A completed session should NOT be reused — start a fresh one instead.
+      // Create a new session when there's no active QA/Discussion session to append to.
+      // For completed discussions: re-activate instead of creating a new QA session,
+      // so the user's follow-up keeps the discussion context and agent memory.
       const activeSession = sessionsRef.current.find((s) => s.id === sessionId);
       const needNewSession =
-        !sessionId || activeSession?.type === 'lecture' || activeSession?.status === 'completed';
+        !sessionId ||
+        activeSession?.type === 'lecture' ||
+        (activeSession?.status === 'completed' && activeSession?.type !== 'discussion');
 
       if (needNewSession) {
         // End all active QA/Discussion sessions before creating new one
@@ -1157,6 +1160,14 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             config: {
               agentIds,
               sessionType,
+              // Pass discussion context when continuing a discussion session so
+              // the director and agents know they're in a discussion, not Q&A.
+              ...(existingSession?.type === 'discussion'
+                ? {
+                    discussionTopic: existingSession.title,
+                    triggerAgentId: existingSession.config.triggerAgentId,
+                  }
+                : {}),
             },
             userProfile: {
               nickname: userProfileState.nickname || undefined,

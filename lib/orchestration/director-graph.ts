@@ -310,16 +310,21 @@ async function runAgentGeneration(
   let actionCount = 0;
   const whiteboardActions: WhiteboardActionRecord[] = [];
 
-  try {
-    for await (const chunk of adapter.streamGenerate(lcMessages, {
+  // Helper: run streaming and process chunks into fullText/actions
+  // Mutates outer fullText, actionCount, whiteboardActions via closure.
+  const runStream = async (
+    messages: BaseMessage[],
+    parserState: ReturnType<typeof createParserState>,
+  ): Promise<{ didYield: boolean }> => {
+    let didYield = false;
+    for await (const chunk of adapter.streamGenerate(messages, {
       signal: config.signal,
     })) {
       if (chunk.type === 'delta') {
+        didYield = true;
         const parseResult = parseStructuredChunk(chunk.content, parserState);
 
         // Emit events in original interleaved order via the `ordered` array.
-        // The ordered array tracks complete items from Step 5 of the parser;
-        // trailing partial text deltas (Step 6) are in textChunks but not in ordered.
         let emittedTextCount = 0;
         if (parseResult.ordered.length > 0 || parseResult.textChunks.length > 0) {
           log.debug(
@@ -353,7 +358,6 @@ async function runAgentGeneration(
               continue;
             }
             actionCount++;
-            // Record whiteboard actions to the ledger
             if (ac.actionName.startsWith('wb_')) {
               whiteboardActions.push({
                 actionName: ac.actionName as WhiteboardActionRecord['actionName'],
@@ -403,6 +407,60 @@ async function runAgentGeneration(
           type: 'text_delta',
           data: { content: text, messageId },
         });
+      }
+    }
+
+    return { didYield };
+  };
+
+  try {
+    const streamMessages = [...lcMessages];
+    let streamResult = await runStream(streamMessages, parserState);
+
+    // If first attempt produced nothing, retry once with a nudge
+    if (!fullText && actionCount === 0 && !streamResult.didYield) {
+      log.warn(
+        `[AgentGenerate] First attempt streamed no deltas for "${agentConfig.name}", retrying with nudge...`,
+      );
+
+      // Reset state for retry
+      fullText = '';
+      actionCount = 0;
+      whiteboardActions.length = 0;
+
+      const retryMessages = [...lcMessages];
+      retryMessages.push(
+        new HumanMessage(
+          'You must respond now. Say something brief and relevant. Do not remain silent.',
+        ),
+      );
+
+      streamResult = await runStream(retryMessages, createParserState());
+    }
+
+    // If still empty after retry, fall back to non-streaming
+    if (!fullText && actionCount === 0) {
+      log.warn(
+        `[AgentGenerate] Retry also empty for "${agentConfig.name}", falling back to non-streaming...`,
+      );
+      try {
+        const result = await adapter._generate(lcMessages);
+        const text = result.generations[0]?.text || '';
+        if (text.trim()) {
+          fullText = text;
+          write({
+            type: 'text_delta',
+            data: { content: text, messageId },
+          });
+          log.info(
+            `[AgentGenerate] Non-streaming fallback produced text(len=${text.length}) for "${agentConfig.name}"`,
+          );
+        }
+      } catch (fallbackError) {
+        log.error(
+          `[AgentGenerate] Non-streaming fallback also failed for "${agentConfig.name}":`,
+          fallbackError,
+        );
       }
     }
   } catch (error) {
