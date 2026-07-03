@@ -450,8 +450,13 @@ async function runAgentGeneration(
           // Parse the non-streaming output through the JSON parser to extract text/actions,
           // just like the streaming path does. The model outputs JSON arrays per system prompt.
           const fallbackParser = createParserState();
-          parseStructuredChunk(rawText, fallbackParser);
-          const finalResult = finalizeParser(fallbackParser);
+          const parseResult = parseStructuredChunk(rawText, fallbackParser);
+          // parseStructuredChunk already fully parsed the JSON (single chunk for non-streaming),
+          // so finalizeParser will return empty if isDone is already set. Use parseResult directly.
+          const finalResult =
+            parseResult.textChunks.length > 0 || parseResult.actions.length > 0
+              ? parseResult
+              : finalizeParser(fallbackParser);
           let emittedText = '';
           for (const entry of finalResult.ordered) {
             if (entry.type === 'text') {
